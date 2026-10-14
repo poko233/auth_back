@@ -1,0 +1,520 @@
+openapi: 3.0.3
+info:
+  title: Autenticación Lab — API
+  description: |
+    Laboratorio experimental de mecanismos de autenticación ante cambios
+    dinámicos de privilegios. Los cuatro mecanismos operan los mismos
+    endpoints y pasan por el mismo AuthorizeAction.
+  version: 1.0.0
+servers:
+  - url: http://localhost:8000/api
+security: []
+paths:
+  /tickets:
+    get:
+      summary: Listar tickets (permiso READ)
+      parameters:
+        - $ref: '#/components/parameters/ExperimentId'
+      responses:
+        '200':
+          description: Lista de tickets
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      summary: Crear ticket (permiso WRITE)
+      parameters:
+        - $ref: '#/components/parameters/ExperimentId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title]
+              properties:
+                title: { type: string, maxLength: 255 }
+                description: { type: string, nullable: true }
+                priority: { type: string, enum: [LOW, MEDIUM, HIGH, CRITICAL] }
+      responses:
+        '201':
+          description: Ticket creado
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /tickets/{id}:
+    get:
+      summary: Ver ticket (permiso READ, registra vista)
+      parameters:
+        - $ref: '#/components/parameters/ExperimentId'
+      responses:
+        '200':
+          description: Ticket
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      summary: Actualizar ticket (permiso WRITE)
+      responses:
+        '200':
+          description: Ticket actualizado
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      summary: Eliminar ticket soft delete (permiso DELETE)
+      responses:
+        '204':
+          description: Eliminado
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /tickets/{id}/status:
+    post:
+      summary: Cambiar estado (permiso WRITE)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status: { type: string, enum: [OPEN, IN_PROGRESS, ESCALATED, RESOLVED, CLOSED] }
+      responses:
+        '200':
+          description: Ticket con nuevo estado
+        '422':
+          description: Transición inválida
+  /tickets/{id}/assign:
+    post:
+      summary: Asignar a usuario o rol (permiso WRITE)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                user_id: { type: integer }
+                role: { type: string }
+      responses:
+        '200':
+          description: Ticket asignado
+  /tickets/{id}/escalate:
+    post:
+      summary: Escalar a un rol (permiso WRITE)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [to_role]
+              properties:
+                to_role: { type: string }
+                note: { type: string, nullable: true }
+      responses:
+        '200':
+          description: Ticket escalado
+  /tickets/{id}/history:
+    get:
+      summary: Bitácora del ticket (permiso READ)
+      responses:
+        '200':
+          description: Entradas de historial
+  /tickets/{id}/views:
+    get:
+      summary: Vistas del ticket (permiso READ)
+      responses:
+        '200':
+          description: Vistas registradas
+  /tickets/{id}/escalations:
+    get:
+      summary: Escalamientos del ticket (permiso READ)
+      responses:
+        '200':
+          description: Escalamientos registrados
+  /users:
+    get:
+      summary: Listar usuarios (sin auth, bootstrap)
+      responses:
+        '200':
+          description: Usuarios
+    post:
+      summary: Registrar usuario (sin auth, bootstrap)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, email, password]
+              properties:
+                name: { type: string }
+                email: { type: string, format: email }
+                password: { type: string, minLength: 8 }
+      responses:
+        '201':
+          description: Usuario creado
+  /users/{id}:
+    get:
+      summary: Ver usuario
+      responses:
+        '200':
+          description: Usuario
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      summary: Actualizar usuario
+      responses:
+        '200':
+          description: Usuario actualizado
+  /users/{id}/deactivate:
+    post:
+      summary: Desactivar usuario
+      responses:
+        '200':
+          description: Usuario desactivado
+  /users/{id}/password:
+    post:
+      summary: Cambiar contraseña
+      responses:
+        '200':
+          description: Contraseña cambiada
+  /users/{id}/roles:
+    post:
+      summary: Asignar rol (escalado del experimento)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [role]
+              properties:
+                role: { type: string }
+      responses:
+        '204':
+          description: Rol asignado
+  /users/{id}/roles/{roleName}:
+    delete:
+      summary: Revocar rol (reducción del experimento)
+      responses:
+        '204':
+          description: Rol revocado
+  /roles:
+    get:
+      summary: Listar roles
+      responses:
+        '200':
+          description: Roles con permisos
+    post:
+      summary: Crear rol dinámico
+      responses:
+        '201':
+          description: Rol creado
+  /roles/{name}:
+    put:
+      summary: Actualizar rol libre
+      responses:
+        '200':
+          description: Rol actualizado
+        '409':
+          $ref: '#/components/responses/Conflict'
+    delete:
+      summary: Borrar rol libre
+      responses:
+        '204':
+          description: Rol borrado
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /roles/{name}/permissions:
+    put:
+      summary: Sincronizar permisos de un rol
+      responses:
+        '204':
+          description: Permisos sincronizados
+  /permissions:
+    get:
+      summary: Listar permisos
+      responses:
+        '200':
+          description: Permisos
+    post:
+      summary: Crear permiso dinámico
+      responses:
+        '201':
+          description: Permiso creado
+  /permissions/{name}:
+    put:
+      summary: Actualizar permiso libre
+      responses:
+        '200':
+          description: Permiso actualizado
+    delete:
+      summary: Borrar permiso libre
+      responses:
+        '204':
+          description: Permiso borrado
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /auth/api-key/login:
+    post:
+      summary: Verificar API Key
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [key]
+              properties:
+                key: { type: string }
+      responses:
+        '200':
+          description: Principal autenticado
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /auth/api-key/issue:
+    post:
+      summary: Emitir API Key (bootstrap, plano una sola vez)
+      responses:
+        '201':
+          description: Key emitida
+  /auth/api-key/revoke/{id}:
+    post:
+      summary: Revocar API Key
+      responses:
+        '204':
+          description: Key revocada
+  /auth/basic/login:
+    post:
+      summary: Verificar credenciales Basic
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string }
+      responses:
+        '200':
+          description: Principal autenticado
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /auth/jwt/login:
+    post:
+      summary: Login JWT con email+password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string }
+      responses:
+        '201':
+          description: Token emitido
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /auth/jwt/refresh:
+    post:
+      summary: Rotar JWT (revoca el anterior)
+      responses:
+        '200':
+          description: Token nuevo
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /auth/jwt/revoke:
+    post:
+      summary: Revocar JWT por jti
+      responses:
+        '204':
+          description: Token revocado
+  /auth/oauth/token:
+    post:
+      summary: Grant ROPC (RFC 6749 §5.2)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [grant_type, client_id, client_secret, username, password]
+              properties:
+                grant_type: { type: string, enum: [password] }
+                client_id: { type: string }
+                client_secret: { type: string }
+                username: { type: string, format: email }
+                password: { type: string }
+      responses:
+        '200':
+          description: Par de tokens
+        '400':
+          description: invalid_grant o unsupported_grant_type
+  /auth/oauth/refresh:
+    post:
+      summary: Rotar par OAuth
+      responses:
+        '200':
+          description: Par nuevo
+        '400':
+          description: invalid_grant
+  /auth/oauth/introspect:
+    post:
+      summary: Introspección RFC 7662 simplificada
+      responses:
+        '200':
+          description: Estado del token
+  /auth/oauth/revoke:
+    post:
+      summary: Revocar access token
+      responses:
+        '204':
+          description: Token revocado
+  /experiments:
+    get:
+      summary: Listar experimentos
+      responses:
+        '200':
+          description: Experimentos
+    post:
+      summary: Iniciar experimento
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, mechanism]
+              properties:
+                name: { type: string }
+                mechanism: { type: string, enum: [api_key, basic, jwt, oauth] }
+      responses:
+        '201':
+          description: Experimento RUNNING
+  /experiments/{id}/finish:
+    post:
+      summary: Cerrar experimento
+      responses:
+        '200':
+          description: Experimento COMPLETED
+  /experiments/{id}/privileges:
+    post:
+      summary: Cambiar privilegios del escenario
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [user_id]
+              properties:
+                user_id: { type: integer }
+                add_roles: { type: array, items: { type: string } }
+                remove_roles: { type: array, items: { type: string } }
+      responses:
+        '204':
+          description: Privilegios cambiados
+  /experiments/{id}/events:
+    get:
+      summary: Eventos del experimento
+      responses:
+        '200':
+          description: Eventos
+  /experiments/{experimentId}/metrics:
+    get:
+      summary: Métricas del experimento
+      responses:
+        '200':
+          description: Métricas
+  /experiments/{experimentId}/metrics/compare:
+    get:
+      summary: Comparación (mediana/p95/stddev + pérdidas)
+      responses:
+        '200':
+          description: Comparación con losses y valid
+components:
+  parameters:
+    ExperimentId:
+      name: X-Experiment-Id
+      in: header
+      required: false
+      description: Activa el registro de métricas si el experimento está RUNNING
+      schema:
+        type: integer
+    AuthMechanism:
+      name: X-Auth-Mechanism
+      in: header
+      required: false
+      description: Discriminador Bearer (jwt|oauth). Ausente equivale a jwt
+      schema:
+        type: string
+        enum: [jwt, oauth]
+  securitySchemes:
+    ApiKey:
+      type: apiKey
+      in: header
+      name: X-API-Key
+    Basic:
+      type: http
+      scheme: basic
+    JwtBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    OAuthBearer:
+      type: http
+      scheme: bearer
+      description: Requiere X-Auth-Mechanism oauth
+  responses:
+    Unauthorized:
+      description: Sin autenticación — siempre bare
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [error]
+            properties:
+              error: { type: string, example: unauthenticated }
+    Forbidden:
+      description: Autorización denegada — siempre con capa
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [error, layer]
+            properties:
+              error: { type: string, example: forbidden }
+              layer: { type: string, enum: [rbac, ticket_rule] }
+              detail: { type: string }
+    NotFound:
+      description: Recurso inexistente (antes que autorización)
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error: { type: string, example: not_found }
+    Conflict:
+      description: Recurso protegido o en uso
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error: { type: string, example: conflict }

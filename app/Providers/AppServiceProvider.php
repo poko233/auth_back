@@ -11,7 +11,10 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        $this->app->bind(
+            \Lab\Domain\Shared\Clock::class,
+            \Lab\Infrastructure\Clock\SystemClock::class,
+        );
     }
 
     /**

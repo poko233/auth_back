@@ -20,8 +20,22 @@ final class AuthenticationServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
-        // Fase 5+:
-        // $this->app->bind(JwtSigner::class, FirebaseJwtSigner::class);
-        // $this->app->bind(PasswordHasher::class, LaravelPasswordHasher::class);
+        $this->app->bind(
+            \Lab\Domain\Identity\PasswordHasher::class,
+            \Lab\Infrastructure\Security\Hashing\LaravelPasswordHasher::class,
+        );
+
+        $this->app->bind(
+            \Lab\Domain\Credential\ApiKey\ApiKeyGenerator::class,
+            \Lab\Infrastructure\Security\ApiKey\SecureApiKeyGenerator::class,
+        );
+
+        $this->app->bind(
+            \Lab\Domain\Credential\Jwt\JwtSigner::class,
+            fn (): \Lab\Infrastructure\Security\Jwt\FirebaseJwtSigner => new \Lab\Infrastructure\Security\Jwt\FirebaseJwtSigner(
+                (string) config('jwt.secret'),
+                (string) config('jwt.algo', 'HS256'),
+            ),
+        );
     }
 }

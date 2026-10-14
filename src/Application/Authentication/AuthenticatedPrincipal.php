@@ -14,8 +14,6 @@ use Lab\Domain\Identity\UserId;
  * extracción y validación de credenciales, pero todos entregan al resto
  * del sistema una instancia de este DTO.
  *
- * Decisión de diseño (Fase 1, cerrada):
- *   Credencial → autenticación específica → AuthenticatedPrincipal → RBAC
  *
  * El RBAC consume exclusivamente este DTO. Nunca Auth::user() de Laravel,
  * nunca el formato crudo de la credencial.

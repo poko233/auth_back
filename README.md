@@ -28,7 +28,7 @@ credencial válida.
 - [Cómo implementar un módulo nuevo](#cómo-implementar-un-módulo-nuevo)
 - [Testing](#testing)
 - [Instalación y ejecución](#instalación-y-ejecución)
-- [Roadma
+- [Roadmap](#roadmap-por-fases)
 - [Convenciones de código](#convenciones-de-código)
 
 ---
@@ -47,7 +47,7 @@ credencial válida.
 nativamente como parte del experimento):
 
 - `laravel/passport` → se implementa un servidor OAuth 2.0 propio.
-- `spatie/laravel-permission` → se implementa RBAp por fases](#roadmap-por-fases)C propio.
+- `spatie/laravel-permission` → se implementa RBAp por fases [Roadmap](#roadmap-por-fases) propio.
 - `firebase/php-jwt` → se instalará sólo en la fase de JWT, como primitiva
   criptográfica, no como la lógica del flujo.
 
@@ -467,14 +467,15 @@ a la siguiente.
 | ---- | ------------------------------------------------------------------------------ | ------------- |
 | 1    | Diseño arquitectónico (Clean Architecture + 2 repos separados)                 | ✅ Completada |
 | 2    | Scaffold Laravel + autoload `Lab\` + Service Providers + tests de arquitectura | ✅ Completada |
-| 3    | Base de datos y entidades fundamentales (users, roles, permissions, resources) | ⏳ Pendiente  |
-| 4    | RBAC propio (asignación, revocación, verificación)                             | ⏳ Pendiente  |
-| 5    | API Key (primer mecanismo de autenticación)                                    | ⏳ Pendiente  |
-| 6    | Basic Authentication                                                           | ⏳ Pendiente  |
-| 7    | JWT (con expiración controlada por `Clock`)                                    | ⏳ Pendiente  |
-| 8    | Servidor OAuth 2.0 propio (flujo a definir según variables experimentales)     | ⏳ Pendiente  |
-| 9    | Experimentos y métricas                                                        | ⏳ Pendiente  |
-| 10   | Frontend React + Vite (repo separado)                                          | ⏳ Pendiente  |
+| 3    | Base de datos y entidades fundamentales (users, tickets neutros)               | ✅ Completada |
+| 4    | RBAC propio + tickets ricos + CRUD de roles/permisos                           | ✅ Completada |
+| 5    | (integrada en Fase 4: modelo de datos extendido)                               | ✅ Completada |
+| 6    | API Key (X-API-Key, hash sha256, expiración, revocación)                       | ✅ Completada |
+| 7    | Basic Authentication (RFC 7617, anti-timing)                                   | ✅ Completada |
+| 8    | JWT (HS256, denylist por jti, rotación con reuso-detection)                    | ✅ Completada |
+| 9    | Servidor OAuth 2.0 propio (grant ROPC, X-Auth-Mechanism)                       | ✅ Completada |
+| 10   | Experimentos y métricas (mediana/p95, pérdidas, smoke)                         | ✅ Completada |
+| 11   | Polish (OpenAPI, smoke, seeders demo, docs)                                    | ✅ Completada |
 
 **Variables experimentales a medir en las fases 9 y 10:**
 
@@ -524,6 +525,79 @@ vendor\bin\pest
 
 Todo verde. Si algún test de arquitectura falla, es una violación de las reglas
 y hay que corregirla antes de continuar.
+
+---
+
+## Experimentos end-to-end
+
+### Secuencia experimental
+
+```
+VIEWER → ESCALADO → EDITOR → ESCALADO → ADMIN → REDUCCIÓN → EDITOR → REVOCACIÓN
+```
+
+Después de cada cambio se ejecutan las mismas operaciones sobre tickets y se
+registran métricas (latencia total y de auth, mecanismo, tamaño de credencial,
+status HTTP y capa de fallo).
+
+### Smoke test (requiere `php artisan serve` activo)
+
+```bash
+php artisan lab:smoke-experiment api_key
+php artisan lab:smoke-experiment basic
+php artisan lab:smoke-experiment jwt
+php artisan lab:smoke-experiment oauth
+```
+
+Cada corrida crea un experimento, ejecuta la secuencia y muestra la comparación
+(mediana/p95/desviación + pérdidas; con pérdidas > 0 la comparación no vale).
+
+### Interpretación de resultados
+
+- **N ≥ 30 iteraciones** por combinación mecanismo×operación; baseline de red
+  ~150-250 ms contra Supabase, así que importan **mediana y p95**, nunca el
+  promedio solo.
+- **`auth_ms`**: solo verificación (lookup/hash/cripto). **`latency_ms`**:
+  request completo. Misma semántica en los 4 mecanismos (1 query por verify).
+- **`failed_layer`**: `rbac` (el rol no autoriza) o `ticket_rule` (el estado
+  del ticket rechaza). Segmenta los 403 sin ambigüedad.
+
+### Los 4 mecanismos
+
+| Mecanismo | Transporte                                                  | Emisión                                             |
+| --------- | ----------------------------------------------------------- | --------------------------------------------------- |
+| API Key   | `X-API-Key: <plano>`                                        | `POST /api/auth/api-key/issue` (plano una sola vez) |
+| Basic     | `Authorization: Basic <base64(email:pass)>`                 | verifica contra users                               |
+| JWT       | `Authorization: Bearer <token>`                             | `POST /api/auth/jwt/login` (email+password)         |
+| OAuth     | `Authorization: Bearer <token>` + `X-Auth-Mechanism: oauth` | `POST /api/auth/oauth/token` (grant password)       |
+
+- 401 siempre bare: `{"error": "unauthenticated"}`.
+- 403 siempre con capa: `{"error": "forbidden", "layer": "rbac"|"ticket_rule"}`.
+- Contrato completo en `docs/openapi.yaml`.
+
+---
+
+## Esquema de base de datos
+
+UNA sola migración: `database/migrations/2026_10_01_000000_create_full_schema.php`
+con las 17 tablas en orden de FKs (users, roles, permissions, pivotes,
+tickets + tracking, api*keys, jwt_revocations, oauth*\*, experiments + métricas).
+La historia previa está en `git log`. Cambios futuros van en migraciones nuevas.
+
+## Reset de base de datos
+
+```bash
+php artisan migrate:fresh --seed   # canónico: borra todo y reconstruye
+php artisan lab:reset              # atajo con confirmación previa
+```
+
+`migrate:fresh --seed` corre las 11 migraciones en orden y todos los seeders
+(roles, permisos, usuarios demo, tickets demo, cliente OAuth, experimento
+demo). El sistema queda completamente funcional en ~30 segundos.
+
+**Las migraciones NO se consolidan**: son historia inmutable (AGENTS.md §4.5).
+Borrarlas y reemplazarlas por un archivo único rompería la tabla `migrations`
+de cualquier base ya migrada y a cualquiera que clone el repo con una BD viva.
 
 ---
 
