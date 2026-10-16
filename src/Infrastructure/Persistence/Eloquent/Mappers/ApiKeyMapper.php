@@ -24,6 +24,7 @@ final class ApiKeyMapper
             $model->getAttribute('label') !== null ? (string) $model->getAttribute('label') : null,
             $this->toImmutable($model->getAttribute('expires_at')),
             $this->toImmutable($model->getAttribute('revoked_at')),
+            $this->toImmutable($model->getAttribute('created_at')),
         );
     }
 

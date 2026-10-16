@@ -20,6 +20,7 @@ final class ApiKeyResource
             'id' => $apiKey->id()?->value(),
             'user_id' => $apiKey->userId(),
             'label' => $apiKey->label(),
+            'created_at' => $apiKey->createdAt()?->format(DATE_ATOM),
             'expires_at' => $apiKey->expiresAt()?->format(DATE_ATOM),
             'revoked_at' => $apiKey->revokedAt()?->format(DATE_ATOM),
         ];

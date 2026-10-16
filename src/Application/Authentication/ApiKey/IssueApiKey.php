@@ -23,16 +23,21 @@ final class IssueApiKey
         private ApiKeyRepository $apiKeys,
         private UserRepository $users,
         private ApiKeyGenerator $generator,
-    ) {
-    }
+    ) {}
 
     /**
      * @return array{apiKey: ApiKey, plain: string}
      */
     public function execute(int $userId, ?string $label = null, ?DateTimeImmutable $expiresAt = null): array
     {
-        if ($this->users->findById(UserId::fromString((string) $userId)) === null) {
+        $user = $this->users->findById(UserId::fromString((string) $userId));
+
+        if ($user === null) {
             throw new UserNotFound("Usuario no encontrado: {$userId}.");
+        }
+
+        if (! $user->isActive()) {
+            throw new \InvalidArgumentException('No se pueden emitir API Keys para un usuario inactivo.');
         }
 
         $plain = $this->generator->generate();

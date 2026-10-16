@@ -6,6 +6,7 @@ namespace Tests\Feature\Authentication;
 
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Lab\Application\Authentication\ApiKey\IssueApiKey;
 use Tests\Support\IssuesApiKeys;
 use Tests\TestCase;
 
@@ -47,10 +48,8 @@ final class ApiKeyAuthTest extends TestCase
             'name' => 'Ana', 'email' => 'ana@lab.test', 'password' => 'secreta123',
         ])->assertCreated()->json('id');
 
-        $plain = (string) $this->postJson('/api/auth/api-key/issue', [
-            'user_id' => $userId,
-            'expires_at' => now()->subMinute()->toIso8601String(),
-        ])->assertCreated()->json('plain');
+        $plain = app(IssueApiKey::class)
+            ->execute($userId, 'Expirada', new \DateTimeImmutable('-1 minute'))['plain'];
 
         $this->postJson('/api/auth/api-key/login', ['key' => $plain])->assertUnauthorized();
         $this->getJson('/api/tickets', $this->keyHeaders($plain))->assertUnauthorized();
@@ -63,7 +62,7 @@ final class ApiKeyAuthTest extends TestCase
 
         $this->getJson('/api/tickets', $this->keyHeaders($admin['key']))->assertOk();
 
-        $this->postJson("/api/auth/api-key/revoke/{$keyId}")->assertNoContent();
+        $this->postJson("/api/auth/api-key/revoke/{$keyId}", [], $this->keyHeaders($admin['key']))->assertNoContent();
 
         $this->getJson('/api/tickets', $this->keyHeaders($admin['key']))->assertUnauthorized();
     }

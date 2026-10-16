@@ -22,8 +22,8 @@ final class ApiKey
         private ?string $label,
         private ?DateTimeImmutable $expiresAt,
         private ?DateTimeImmutable $revokedAt,
-    ) {
-    }
+        private ?DateTimeImmutable $createdAt = null,
+    ) {}
 
     public static function create(int $userId, string $keyHash, ?string $label = null, ?DateTimeImmutable $expiresAt = null): self
     {
@@ -37,8 +37,9 @@ final class ApiKey
         ?string $label,
         ?DateTimeImmutable $expiresAt,
         ?DateTimeImmutable $revokedAt,
+        ?DateTimeImmutable $createdAt = null,
     ): self {
-        return new self($id, $userId, $keyHash, $label, $expiresAt, $revokedAt);
+        return new self($id, $userId, $keyHash, $label, $expiresAt, $revokedAt, $createdAt);
     }
 
     public function id(): ?ApiKeyId
@@ -76,6 +77,11 @@ final class ApiKey
         return $this->revokedAt !== null;
     }
 
+    public function createdAt(): ?DateTimeImmutable
+    {
+        return $this->createdAt;
+    }
+
     public function isExpired(DateTimeImmutable $now): bool
     {
         return $this->expiresAt !== null && $now >= $this->expiresAt;
@@ -83,6 +89,6 @@ final class ApiKey
 
     public function revoke(DateTimeImmutable $now): void
     {
-        $this->revokedAt = $now;
+        $this->revokedAt ??= $now;
     }
 }

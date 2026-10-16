@@ -18,7 +18,9 @@ final class SmokeExperiment extends Command
 {
     protected $signature = 'lab:smoke-experiment
         {mechanism : api_key|basic|jwt|oauth}
-        {--base-url=http://localhost:8000}';
+        {--base-url=http://localhost:8000}
+        {--admin-email=admin@lab.test}
+        {--admin-password= : Contraseña del administrador para gestionar API Keys}';
 
     protected $description = 'Corre la secuencia experimental con un mecanismo y la compara.';
 
@@ -26,6 +28,9 @@ final class SmokeExperiment extends Command
 
     /** @var array<string, string> */
     private array $auth = [];
+
+    /** @var array<string, string> */
+    private array $managementAuth = [];
 
     private ?string $experimentId = null;
 
@@ -40,6 +45,11 @@ final class SmokeExperiment extends Command
             $this->error('Mecanismo inválido. Usa api_key|basic|jwt|oauth.');
 
             return self::FAILURE;
+        }
+
+        if ($mechanism === 'api_key') {
+            $password = $this->option('admin-password') ?: $this->secret('Contraseña del administrador');
+            $this->managementAuth = ['Authorization' => 'Basic '.base64_encode($this->option('admin-email').':'.$password)];
         }
 
         $userId = $this->setupUser($mechanism);
@@ -118,7 +128,9 @@ final class SmokeExperiment extends Command
 
     private function issueApiKey(int $userId): string
     {
-        $response = Http::post("{$this->base}/auth/api-key/issue", ['user_id' => $userId])->json();
+        $response = Http::withHeaders($this->managementAuth)->post("{$this->base}/auth/api-key/issue", [
+            'user_id' => $userId, 'label' => 'Smoke experimental',
+        ])->throw()->json();
 
         return (string) $response['plain'];
     }
@@ -152,8 +164,8 @@ final class SmokeExperiment extends Command
     }
 
     /**
-     * @param list<string> $add
-     * @param list<string> $remove
+     * @param  list<string>  $add
+     * @param  list<string>  $remove
      */
     private function privileges(int $userId, array $add, array $remove): void
     {
@@ -189,10 +201,12 @@ final class SmokeExperiment extends Command
     private function revokeCredential(string $mechanism, int $userId): void
     {
         if ($mechanism === 'api_key') {
-            $keys = Http::get("{$this->base}/auth/api-key/users/{$userId}/keys")->json();
+            $keys = Http::withHeaders($this->managementAuth)->get("{$this->base}/auth/api-key/users/{$userId}/keys")->throw()->json();
 
             foreach (is_array($keys) ? $keys : [] as $key) {
-                Http::post("{$this->base}/auth/api-key/revoke/{$key['id']}");
+                if ($key['revoked_at'] === null) {
+                    Http::withHeaders($this->managementAuth)->post("{$this->base}/auth/api-key/revoke/{$key['id']}")->throw();
+                }
             }
         }
 

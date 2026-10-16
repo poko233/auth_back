@@ -17,10 +17,9 @@ final class RevokeApiKey
     public function __construct(
         private ApiKeyRepository $apiKeys,
         private Clock $clock,
-    ) {
-    }
+    ) {}
 
-    public function execute(ApiKeyId $id): void
+    public function execute(ApiKeyId $id): bool
     {
         $apiKey = $this->apiKeys->findById($id);
 
@@ -28,7 +27,13 @@ final class RevokeApiKey
             throw new ApiKeyNotFound("API Key no encontrada: {$id->value()}.");
         }
 
+        if ($apiKey->isRevoked()) {
+            return false;
+        }
+
         $apiKey->revoke($this->clock->now());
         $this->apiKeys->save($apiKey);
+
+        return true;
     }
 }

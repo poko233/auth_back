@@ -285,16 +285,99 @@ paths:
           $ref: '#/components/responses/Unauthorized'
   /auth/api-key/issue:
     post:
-      summary: Emitir API Key (bootstrap, plano una sola vez)
+      summary: Emitir API Key (permiso ADMIN, plano una sola vez)
+      security:
+        - Basic: []
+        - ApiKey: []
+        - JwtBearer: []
+        - OAuthBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [user_id, label]
+              properties:
+                user_id: { type: integer, minimum: 1 }
+                label: { type: string, minLength: 1, maxLength: 100 }
+                expires_at:
+                  type: string
+                  format: date-time
+                  nullable: true
+                  description: Instante futuro con zona horaria; se almacena en UTC. Omitir para no expirar.
       responses:
         '201':
-          description: Key emitida
+          description: Clave emitida. El secreto plain solo se entrega aquí (Cache-Control no-store).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  key: { $ref: '#/components/schemas/ApiKeyMetadata' }
+                  plain: { type: string }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          description: Etiqueta ausente, expiración no futura, datos inválidos o usuario inactivo.
+  /auth/api-key/users/{userId}/keys:
+    get:
+      summary: Listar metadatos de API Keys de un usuario (permiso ADMIN)
+      security:
+        - Basic: []
+        - ApiKey: []
+        - JwtBearer: []
+        - OAuthBearer: []
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema: { type: integer, minimum: 1 }
+      responses:
+        '200':
+          description: Lista de claves, incluidas expiradas y revocadas; nunca contiene plain ni hash.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ApiKeyMetadata' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /auth/api-key/revoke/{id}:
     post:
-      summary: Revocar API Key
+      summary: Revocar API Key (permiso ADMIN)
+      security:
+        - Basic: []
+        - ApiKey: []
+        - JwtBearer: []
+        - OAuthBearer: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer, minimum: 1 }
       responses:
         '204':
           description: Key revocada
+        '409':
+          description: API Key ya revocada; conserva el instante original.
+          content:
+            application/json:
+              example: { error: already_revoked, detail: Esta API Key ya está revocada }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /auth/basic/login:
     post:
       summary: Verificar credenciales Basic
@@ -449,6 +532,16 @@ paths:
         '200':
           description: Comparación con losses y valid
 components:
+  schemas:
+    ApiKeyMetadata:
+      type: object
+      properties:
+        id: { type: integer }
+        user_id: { type: integer }
+        label: { type: string, nullable: true }
+        created_at: { type: string, format: date-time, nullable: true }
+        expires_at: { type: string, format: date-time, nullable: true }
+        revoked_at: { type: string, format: date-time, nullable: true }
   parameters:
     ExperimentId:
       name: X-Experiment-Id

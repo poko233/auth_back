@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Support;
 
 use Illuminate\Support\Facades\DB;
+use Lab\Application\Authentication\ApiKey\IssueApiKey;
 
 /**
  * Ayudas para tests Feature con API Key.
@@ -26,9 +27,9 @@ trait IssuesApiKeys
 
         $this->postJson("/api/users/{$userId}/roles", ['role' => $role])->assertNoContent();
 
-        $plain = (string) $this->postJson('/api/auth/api-key/issue', [
-            'user_id' => $userId,
-        ])->assertCreated()->json('plain');
+        // Fixture interna: la emisión HTTP exige ahora un administrador (HU 31).
+        $plain = app(IssueApiKey::class)
+            ->execute($userId, 'Fixture de autenticación')['plain'];
 
         return ['id' => $userId, 'key' => $plain];
     }
