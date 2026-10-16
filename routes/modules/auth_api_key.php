@@ -12,5 +12,7 @@ Route::prefix('auth/api-key')->group(function (): void {
         Route::post('issue', [ApiKeyAuthController::class, 'issue']);
         Route::post('revoke/{id}', [ApiKeyAuthController::class, 'revoke'])->whereNumber('id');
         Route::get('users/{userId}/keys', [ApiKeyAuthController::class, 'index'])->whereNumber('userId');
+
+        Route::get('protected-resource', fn () => response()->json(['message' => 'OK']));
     });
 });

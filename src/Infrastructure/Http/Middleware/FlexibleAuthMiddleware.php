@@ -80,4 +80,5 @@ final class FlexibleAuthMiddleware
 
         return $next($request);
     }
+
 }
