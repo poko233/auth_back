@@ -19,7 +19,7 @@ final class StoreRoleRequest extends FormRequest
         return [
             'name' => ['required', 'string', 'max:32'],
             'description' => ['nullable', 'string', 'max:255'],
-            'permissions' => ['sometimes', 'array'],
+            'permissions' => ['required', 'array', 'min:1'],
             'permissions.*' => ['string', 'max:32'],
         ];
     }

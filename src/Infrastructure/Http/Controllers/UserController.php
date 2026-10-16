@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Lab\Infrastructure\Http\Controllers;
 
 use Illuminate\Http\JsonResponse;
+use Lab\Application\Access\ListUserRoles;
 use Lab\Application\Identity\ChangeUserPassword;
 use Lab\Application\Identity\DeactivateUser;
 use Lab\Application\Identity\FindUserById;
@@ -12,6 +13,7 @@ use Lab\Application\Identity\ListUsers;
 use Lab\Application\Identity\RegisterUser;
 use Lab\Application\Identity\UpdateUser;
 use Lab\Domain\Identity\UserId;
+use Lab\Infrastructure\Http\ApiResources\RoleResource;
 use Lab\Infrastructure\Http\ApiResources\UserResource;
 use Lab\Infrastructure\Http\Requests\ChangePasswordRequest;
 use Lab\Infrastructure\Http\Requests\StoreUserRequest;
@@ -29,6 +31,7 @@ final class UserController
         private UpdateUser $updateUser,
         private DeactivateUser $deactivateUser,
         private ChangeUserPassword $changeUserPassword,
+        private ListUserRoles $listUserRoles,
     ) {
     }
 
@@ -43,7 +46,10 @@ final class UserController
     {
         $user = $this->findUserById->execute(UserId::fromString($id));
 
-        return response()->json(UserResource::make($user));
+        return response()->json([
+            ...UserResource::make($user),
+            'roles' => array_map(RoleResource::make(...), $this->listUserRoles->execute($user->id())),
+        ]);
     }
 
     public function store(StoreUserRequest $request): JsonResponse

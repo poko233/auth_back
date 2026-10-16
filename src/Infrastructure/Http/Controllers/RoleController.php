@@ -77,7 +77,14 @@ final class RoleController
 
     public function assign(AssignRoleRequest $request, string $userId): JsonResponse
     {
-        $this->assignRoleToUser->execute(UserId::fromString($userId), $request->validated()['role']);
+        $assigned = $this->assignRoleToUser->execute(UserId::fromString($userId), $request->validated()['role']);
+
+        if (! $assigned) {
+            return response()->json([
+                'error' => 'role_already_assigned',
+                'detail' => 'El usuario ya tiene este rol asignado',
+            ], 409);
+        }
 
         return response()->json(null, 204);
     }

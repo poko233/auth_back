@@ -21,7 +21,8 @@ final class AssignRoleToUser
     ) {
     }
 
-    public function execute(UserId $userId, string $roleName): void
+    /** Devuelve false si el rol ya estaba asignado; conserva la idempotencia interna. */
+    public function execute(UserId $userId, string $roleName): bool
     {
         if ($this->users->findById($userId) === null) {
             throw new UserNotFound("Usuario no encontrado: {$userId->value()}.");
@@ -31,6 +32,14 @@ final class AssignRoleToUser
             throw new RoleNotFound("Rol desconocido: {$roleName}.");
         }
 
+        foreach ($this->roles->currentRolesOf($userId) as $role) {
+            if ($role->name() === $roleName) {
+                return false;
+            }
+        }
+
         $this->roles->assignToUser($userId, $roleName);
+
+        return true;
     }
 }

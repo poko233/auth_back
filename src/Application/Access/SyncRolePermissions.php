@@ -6,6 +6,7 @@ namespace Lab\Application\Access;
 
 use InvalidArgumentException;
 use Lab\Domain\Access\Exception\RoleNotFound;
+use Lab\Domain\Access\Exception\SystemRoleProtected;
 use Lab\Domain\Access\PermissionName;
 use Lab\Domain\Access\PermissionRepository;
 use Lab\Domain\Access\RoleRepository;
@@ -26,8 +27,14 @@ final class SyncRolePermissions
      */
     public function execute(string $roleName, array $permissionNames): void
     {
-        if ($this->roles->findByName($roleName) === null) {
+        $role = $this->roles->findByName($roleName);
+
+        if ($role === null) {
             throw new RoleNotFound("Rol desconocido: {$roleName}.");
+        }
+
+        if ($role->isSystem()) {
+            throw new SystemRoleProtected('Este rol es del sistema y no puede modificarse');
         }
 
         $names = [];
