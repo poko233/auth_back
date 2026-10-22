@@ -11,6 +11,7 @@ use Lab\Application\Authentication\OAuth\RefreshAccessToken;
 use Lab\Application\Authentication\OAuth\RevokeToken;
 use Lab\Application\Identity\FindUserById;
 use Lab\Domain\Credential\OAuth\Exception\InvalidGrant;
+use Lab\Domain\Credential\OAuth\Exception\TokenAlreadyRevoked;
 use Lab\Domain\Identity\UserId;
 use Lab\Infrastructure\Http\ApiResources\UserResource;
 use Lab\Infrastructure\Http\Requests\OAuthIntrospectRequest;
@@ -98,6 +99,11 @@ final class OAuthController
     {
         try {
             $this->revoke->execute($request->validated()['token']);
+        } catch (TokenAlreadyRevoked) {
+            return response()->json([
+                'error' => 'token_already_revoked',
+                'detail' => 'El token ya estaba revocado',
+            ], 409);
         } catch (InvalidGrant) {
             return response()->json(['error' => 'invalid_grant'], 400);
         }

@@ -47,6 +47,14 @@ final class EloquentRefreshTokenRepository implements RefreshTokenRepository
         return $model === null ? null : $this->toDomain($model);
     }
 
+    public function revokeByAccessTokenId(int $accessTokenId, DateTimeImmutable $revokedAt): void
+    {
+        OAuthRefreshTokenModel::query()
+            ->where('access_token_id', $accessTokenId)
+            ->whereNull('revoked_at')
+            ->update(['revoked_at' => $revokedAt]);
+    }
+
     private function toDomain(OAuthRefreshTokenModel $model): RefreshToken
     {
         return RefreshToken::reconstitute(

@@ -57,6 +57,8 @@ final class OAuthTest extends TestCase
             'password' => $password,
         ])->assertOk()
             ->assertJsonPath('token_type', 'Bearer')
+            ->assertJsonPath('expires_in', 3600)
+            ->assertJsonStructure(['access_token', 'refresh_token'])
             ->json();
 
         return ['access_token' => $response['access_token'], 'refresh_token' => $response['refresh_token']];
@@ -134,6 +136,76 @@ final class OAuthTest extends TestCase
             ->assertOk()->assertJsonPath('active', false);
 
         $this->getJson('/api/tickets', $this->oauthHeaders($tokens['access_token']))->assertUnauthorized();
+
+        $this->assertDatabaseHas('oauth_refresh_tokens', [
+            'refresh_token' => hash('sha256', $tokens['refresh_token']),
+        ]);
+        $this->assertNotNull(DB::table('oauth_refresh_tokens')
+            ->where('refresh_token', hash('sha256', $tokens['refresh_token']))->value('revoked_at'));
+
+        $this->postJson('/api/auth/oauth/refresh', ['refresh_token' => $tokens['refresh_token']])
+            ->assertStatus(400)->assertJsonPath('error', 'invalid_grant');
+    }
+
+    public function test_segunda_revocacion_repara_refresh_y_conserva_fecha_del_access(): void
+    {
+        $tokens = $this->passwordGrant('admin@lab.test', 'secreta123');
+        $accessHash = hash('sha256', $tokens['access_token']);
+        $access = DB::table('oauth_access_tokens')->where('access_token', $accessHash)->first();
+        $revokedAt = now()->subMinute()->format('Y-m-d H:i:s');
+        DB::table('oauth_access_tokens')->where('id', $access->id)->update(['revoked_at' => $revokedAt]);
+
+        // La relación permite más de un refresh por access token.
+        $extraRefresh = str_repeat('b', 64);
+        DB::table('oauth_refresh_tokens')->insert([
+            'refresh_token' => hash('sha256', $extraRefresh),
+            'access_token_id' => $access->id,
+            'expires_at' => now()->addDay(),
+        ]);
+
+        $this->postJson('/api/auth/oauth/revoke', ['token' => $tokens['access_token']])
+            ->assertStatus(409)->assertExactJson([
+                'error' => 'token_already_revoked',
+                'detail' => 'El token ya estaba revocado',
+            ]);
+
+        $this->assertDatabaseHas('oauth_access_tokens', ['id' => $access->id, 'revoked_at' => $revokedAt]);
+        $this->assertSame(0, DB::table('oauth_refresh_tokens')
+            ->where('access_token_id', $access->id)->whereNull('revoked_at')->count());
+
+        foreach ([$tokens['refresh_token'], $extraRefresh] as $refresh) {
+            $this->postJson('/api/auth/oauth/refresh', ['refresh_token' => $refresh])
+                ->assertStatus(400)->assertJsonPath('error', 'invalid_grant');
+        }
+
+        $this->postJson('/api/auth/oauth/revoke', ['token' => $tokens['access_token']])
+            ->assertStatus(409)->assertJsonPath('error', 'token_already_revoked');
+    }
+
+    public function test_revocacion_desconocida_y_campos_obligatorios(): void
+    {
+        $this->postJson('/api/auth/oauth/revoke', ['token' => str_repeat('x', 64)])
+            ->assertStatus(400)->assertExactJson(['error' => 'invalid_grant']);
+        $this->postJson('/api/auth/oauth/revoke', [])->assertStatus(422)->assertJsonValidationErrors('token');
+        $this->postJson('/api/auth/oauth/revoke', ['token' => 'corto'])
+            ->assertStatus(422)->assertJsonValidationErrors('token');
+        $this->postJson('/api/auth/oauth/token', ['grant_type' => 'password'])
+            ->assertStatus(422)->assertJsonValidationErrors(['username', 'password', 'client_id', 'client_secret']);
+    }
+
+    public function test_emision_rechaza_cliente_inexistente_y_usuario_inactivo(): void
+    {
+        DB::table('users')->where('email', 'viewer@lab.test')->update(['is_active' => false]);
+
+        foreach ([['inexistente', 'admin@lab.test'], [self::CLIENT, 'viewer@lab.test'], [self::CLIENT, 'nadie@lab.test']] as [$clientId, $email]) {
+            $this->postJson('/api/auth/oauth/token', [
+                'grant_type' => 'password',
+                'client_id' => $clientId,
+                'client_secret' => self::SECRET,
+                'username' => $email,
+                'password' => 'secreta123',
+            ])->assertStatus(400)->assertExactJson(['error' => 'invalid_grant']);
+        }
     }
 
     public function test_viewer_no_puede_borrar_403_con_layer_rbac(): void
