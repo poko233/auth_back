@@ -13,7 +13,7 @@ interface RefreshTokenRepository
 {
     public function save(RefreshToken $token): RefreshToken;
 
-    public function findByHash(string $tokenHash): ?RefreshToken;
+    public function findByHash(string $tokenHash, bool $forUpdate = false): ?RefreshToken;
 
     public function revokeByAccessTokenId(int $accessTokenId, DateTimeImmutable $revokedAt): void;
 }

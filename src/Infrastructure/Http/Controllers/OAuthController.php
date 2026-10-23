@@ -11,6 +11,8 @@ use Lab\Application\Authentication\OAuth\RefreshAccessToken;
 use Lab\Application\Authentication\OAuth\RevokeToken;
 use Lab\Application\Identity\FindUserById;
 use Lab\Domain\Credential\OAuth\Exception\InvalidGrant;
+use Lab\Domain\Credential\OAuth\Exception\RefreshTokenExpired;
+use Lab\Domain\Credential\OAuth\Exception\RefreshTokenRevoked;
 use Lab\Domain\Credential\OAuth\Exception\TokenAlreadyRevoked;
 use Lab\Domain\Identity\UserId;
 use Lab\Infrastructure\Http\ApiResources\UserResource;
@@ -33,8 +35,7 @@ final class OAuthController
         private IntrospectToken $introspect,
         private RevokeToken $revoke,
         private FindUserById $findUser,
-    ) {
-    }
+    ) {}
 
     public function token(OAuthTokenRequest $request): JsonResponse
     {
@@ -60,13 +61,17 @@ final class OAuthController
             'access_token' => $issued['access_token'],
             'refresh_token' => $issued['refresh_token'],
             'expires_in' => $issued['expires_in'],
-        ]);
+        ])->header('Cache-Control', 'no-store')->header('Pragma', 'no-cache');
     }
 
     public function refresh(OAuthRefreshRequest $request): JsonResponse
     {
         try {
             $issued = $this->refresh->execute($request->validated()['refresh_token']);
+        } catch (RefreshTokenExpired) {
+            return response()->json(['error' => 'invalid_grant', 'reason' => 'expired_token', 'detail' => 'El token de renovación ha expirado'], 400);
+        } catch (RefreshTokenRevoked) {
+            return response()->json(['error' => 'invalid_grant', 'reason' => 'revoked_token', 'detail' => 'El token de renovación ha sido revocado'], 400);
         } catch (InvalidGrant) {
             return response()->json(['error' => 'invalid_grant'], 400);
         }
@@ -76,7 +81,7 @@ final class OAuthController
             'access_token' => $issued['access_token'],
             'refresh_token' => $issued['refresh_token'],
             'expires_in' => $issued['expires_in'],
-        ]);
+        ])->header('Cache-Control', 'no-store')->header('Pragma', 'no-cache');
     }
 
     public function introspect(OAuthIntrospectRequest $request): JsonResponse

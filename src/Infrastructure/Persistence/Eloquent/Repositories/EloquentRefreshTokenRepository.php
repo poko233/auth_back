@@ -26,7 +26,7 @@ final class EloquentRefreshTokenRepository implements RefreshTokenRepository
         }
 
         if ($model === null) {
-            $model = new OAuthRefreshTokenModel();
+            $model = new OAuthRefreshTokenModel;
             $model->setAttribute('refresh_token', $token->tokenHash());
             $model->setAttribute('access_token_id', $token->accessTokenId());
             $model->setAttribute('expires_at', $token->expiresAt());
@@ -40,9 +40,15 @@ final class EloquentRefreshTokenRepository implements RefreshTokenRepository
         return $this->toDomain($model);
     }
 
-    public function findByHash(string $tokenHash): ?RefreshToken
+    public function findByHash(string $tokenHash, bool $forUpdate = false): ?RefreshToken
     {
-        $model = OAuthRefreshTokenModel::query()->select(self::COLUMNS)->where('refresh_token', $tokenHash)->first();
+        $query = OAuthRefreshTokenModel::query()->select(self::COLUMNS)->where('refresh_token', $tokenHash);
+
+        if ($forUpdate) {
+            $query->lockForUpdate();
+        }
+
+        $model = $query->first();
 
         return $model === null ? null : $this->toDomain($model);
     }

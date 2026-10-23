@@ -8,9 +8,12 @@ use Lab\Domain\Credential\ApiKey\ApiKeyGenerator;
 use Lab\Domain\Credential\OAuth\AccessToken;
 use Lab\Domain\Credential\OAuth\AccessTokenRepository;
 use Lab\Domain\Credential\OAuth\Exception\InvalidGrant;
+use Lab\Domain\Credential\OAuth\Exception\RefreshTokenExpired;
+use Lab\Domain\Credential\OAuth\Exception\RefreshTokenRevoked;
 use Lab\Domain\Credential\OAuth\RefreshToken;
 use Lab\Domain\Credential\OAuth\RefreshTokenRepository;
 use Lab\Domain\Shared\Clock;
+use Lab\Domain\Shared\TransactionManager;
 
 /**
  * Rota un refresh token: emite par nuevo y revoca el anterior.
@@ -24,15 +27,28 @@ final class RefreshAccessToken
         private RefreshTokenRepository $refreshTokens,
         private ApiKeyGenerator $generator,
         private Clock $clock,
-    ) {
-    }
+        private TransactionManager $transactions,
+    ) {}
 
     /**
      * @return array{access_token: string, refresh_token: string, expires_in: int}
      */
     public function execute(string $refreshPlain, int $ttlSeconds = 3600): array
     {
-        $refresh = $this->refreshTokens->findByHash(IssueTokenByPassword::hash($refreshPlain));
+        $result = $this->transactions->transaction(fn () => $this->rotate($refreshPlain, $ttlSeconds));
+
+        // La detección de reuso debe confirmar la revocación de la familia antes de responder.
+        if ($result instanceof RefreshTokenRevoked) {
+            throw $result;
+        }
+
+        return $result;
+    }
+
+    /** @return array{access_token: string, refresh_token: string, expires_in: int}|RefreshTokenRevoked */
+    private function rotate(string $refreshPlain, int $ttlSeconds): array|RefreshTokenRevoked
+    {
+        $refresh = $this->refreshTokens->findByHash(IssueTokenByPassword::hash($refreshPlain), true);
 
         if ($refresh === null) {
             throw new InvalidGrant('Refresh token desconocido.');
@@ -42,11 +58,12 @@ final class RefreshAccessToken
 
         if ($refresh->isRevoked()) {
             $this->revokeFamily($refresh);
-            throw new InvalidGrant('Refresh token ya usado: familia revocada por reuso.');
+
+            return new RefreshTokenRevoked('El token de renovación ha sido revocado');
         }
 
         if ($refresh->isExpired($now)) {
-            throw new InvalidGrant('Refresh token expirado.');
+            throw new RefreshTokenExpired('El token de renovación ha expirado');
         }
 
         $accessPlain = $this->generator->generate();
@@ -56,6 +73,13 @@ final class RefreshAccessToken
 
         if ($parent === null) {
             throw new InvalidGrant('Access token padre inexistente.');
+        }
+
+        if ($parent->isRevoked()) {
+            $refresh->revoke($now);
+            $this->refreshTokens->save($refresh);
+
+            return new RefreshTokenRevoked('El token de renovación ha sido revocado');
         }
 
         $access = $this->accessTokens->save(AccessToken::create(
@@ -76,6 +100,9 @@ final class RefreshAccessToken
         $refresh->markReplaced(IssueTokenByPassword::hash($newRefreshPlain), $now);
         $this->refreshTokens->save($refresh);
 
+        $parent->revoke($now);
+        $this->accessTokens->save($parent);
+
         return ['access_token' => $accessPlain, 'refresh_token' => $newRefreshPlain, 'expires_in' => $ttlSeconds];
     }
 
@@ -86,7 +113,7 @@ final class RefreshAccessToken
         $guard = 0;
 
         while ($current->replacedBy() !== null && $guard < 100) {
-            $child = $this->refreshTokens->findByHash($current->replacedBy());
+            $child = $this->refreshTokens->findByHash($current->replacedBy(), true);
 
             if ($child === null) {
                 break;

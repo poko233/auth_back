@@ -452,11 +452,30 @@ paths:
   /auth/oauth/refresh:
     post:
       summary: Rotar par OAuth
+      description: Renueva ambos tokens e invalida el access anterior. El reuso de un refresh revocado invalida la cadena descendente.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refresh_token]
+              properties:
+                refresh_token: { type: string, minLength: 16 }
       responses:
         '200':
-          description: Par nuevo
+          description: Par nuevo (token_type, access_token, refresh_token, expires_in). Cache-Control no-store.
         '400':
-          description: invalid_grant
+          description: invalid_grant; reason distingue expired_token y revoked_token. Token desconocido no incluye reason.
+          content:
+            application/json:
+              examples:
+                expired:
+                  value: { error: invalid_grant, reason: expired_token, detail: El token de renovación ha expirado }
+                revoked:
+                  value: { error: invalid_grant, reason: revoked_token, detail: El token de renovación ha sido revocado }
+                unknown:
+                  value: { error: invalid_grant }
   /auth/oauth/introspect:
     post:
       summary: Introspección RFC 7662 simplificada
