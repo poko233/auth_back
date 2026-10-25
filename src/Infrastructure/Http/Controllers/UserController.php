@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Lab\Infrastructure\Http\Controllers;
 
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\Auth;
 use Lab\Application\Access\ListUserRoles;
 use Lab\Application\Identity\ChangeUserPassword;
 use Lab\Application\Identity\DeactivateUser;
@@ -84,5 +85,22 @@ final class UserController
         $user = $this->changeUserPassword->execute(UserId::fromString($id), $request->validated()['password']);
 
         return response()->json(UserResource::make($user));
+    }
+
+    public function me(): JsonResponse
+    {
+        $principal = request()->attributes->get('auth.principal');
+
+        if (!$principal) {
+            return response()->json(['error' => 'unauthenticated'], 401);
+        }
+
+        $user = $this->findUserById->execute($principal->userId);
+        $roles = array_map(RoleResource::make(...), $this->listUserRoles->execute($user->id()));
+
+        return response()->json([
+            'user' => UserResource::make($user),
+            'roles' => $roles,
+        ]);
     }
 }

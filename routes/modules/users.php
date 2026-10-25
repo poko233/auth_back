@@ -9,6 +9,7 @@ use Lab\Infrastructure\Http\Controllers\UserController;
 Route::prefix('users')->group(function (): void {
     Route::get('/', [UserController::class, 'index']);
     Route::post('/', [UserController::class, 'store']);
+    Route::get('me', [UserController::class, 'me'])->middleware(\Lab\Infrastructure\Http\Middleware\FlexibleAuthMiddleware::class);
     Route::get('{id}', [UserController::class, 'show']);
     Route::put('{id}', [UserController::class, 'update']);
     Route::post('{id}/deactivate', [UserController::class, 'deactivate']);
