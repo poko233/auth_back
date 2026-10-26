@@ -6,6 +6,7 @@ namespace Lab\Infrastructure\Http\Controllers;
 
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Auth;
+use Lab\Application\Access\ListUserPermissions;
 use Lab\Application\Access\ListUserRoles;
 use Lab\Application\Identity\ChangeUserPassword;
 use Lab\Application\Identity\DeactivateUser;
@@ -33,6 +34,7 @@ final class UserController
         private DeactivateUser $deactivateUser,
         private ChangeUserPassword $changeUserPassword,
         private ListUserRoles $listUserRoles,
+        private ListUserPermissions $listUserPermissions,
     ) {
     }
 
@@ -96,11 +98,12 @@ final class UserController
         }
 
         $user = $this->findUserById->execute($principal->userId);
-        $roles = array_map(RoleResource::make(...), $this->listUserRoles->execute($user->id()));
+        $roles = $this->listUserRoles->execute($user->id());
 
         return response()->json([
             'user' => UserResource::make($user),
-            'roles' => $roles,
+            'roles' => array_map(RoleResource::make(...), $roles),
+            'permissions' => $this->listUserPermissions->execute($roles),
         ]);
     }
 }

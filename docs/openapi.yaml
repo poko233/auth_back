@@ -164,6 +164,39 @@ paths:
       responses:
         '201':
           description: Usuario creado
+    /users/me:
+    get:
+      summary: Perfil del usuario autenticado con roles y permisos efectivos
+      description: |
+        Devuelve la identidad del principal ya autenticado por el middleware
+        flexible (X-API-Key, Basic, Bearer JWT o Bearer OAuth con
+        X-Auth-Mechanism: oauth) junto con sus roles vigentes y la unión
+        plana, deduplicada y ordenada de los permisos de todos sus roles.
+
+        Los permisos se resuelven contra el estado actual en base de datos en
+        cada request. No hay caché ni permisos embebidos en la credencial:
+        un rol revocado deja de aportar sus permisos en la siguiente llamada.
+      security:
+        - Basic: []
+        - ApiKey: []
+        - JwtBearer: []
+        - OAuthBearer: []
+      responses:
+        '200':
+          description: Perfil del usuario autenticado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserMeResponse'
+        '400':
+          description: X-Auth-Mechanism desconocido con Bearer (invalid_mechanism)
+          content:
+            application/json:
+              example: { error: invalid_mechanism }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /users/{id}:
     get:
       summary: Ver usuario
@@ -552,6 +585,51 @@ paths:
           description: Comparación con losses y valid
 components:
   schemas:
+  UserMeResponse:
+      type: object
+      required: [user, roles, permissions]
+      properties:
+        user:
+          $ref: '#/components/schemas/UserMeIdentity'
+        roles:
+          type: array
+          items:
+            $ref: '#/components/schemas/RoleWithPermissions'
+        permissions:
+          type: array
+          description: |
+            Unión plana de los permisos de todos los roles del usuario.
+            Deduplicada y ordenada ascendentemente. Vacía si ningún rol del
+            usuario tiene permisos asignados.
+          items:
+            type: string
+            example: READ
+
+    UserMeIdentity:
+      type: object
+      required: [id, name, email, is_active]
+      properties:
+        id:
+          type: string
+          description: Identificador numérico serializado como string (UserId::value()).
+          example: "1"
+        name: { type: string }
+        email: { type: string, format: email }
+        is_active: { type: boolean }
+
+    RoleWithPermissions:
+      type: object
+      required: [name, description, is_system, permissions]
+      properties:
+        name: { type: string, example: ADMIN }
+        description: { type: string, nullable: true }
+        is_system: { type: boolean }
+        permissions:
+          type: array
+          description: Permisos asignados a este rol, sin deduplicar entre roles.
+          items:
+            type: string
+          example: [ADMIN, READ]
     ApiKeyMetadata:
       type: object
       properties:
