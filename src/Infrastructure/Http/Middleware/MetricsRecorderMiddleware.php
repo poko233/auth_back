@@ -27,7 +27,7 @@ use Throwable;
  * - auth_ms: solo las llamadas authenticate del flexible (lookup/hash/
  *   cripto+revocación). NUNCA incluye el INSERT de la métrica.
  * - latency_ms: request completo (auth + autorización + negocio + persistencia).
- * - mechanism: del principal (nunca de un header); 'none' si no hubo auth.
+ * - mechanism: del principal; en 401, rama intentada por FlexibleAuth; sin evidencia, 'none'.
  * - failed_layer: parseado del body cuando trae 'layer' (403 de RBAC/regla).
  *
  * El middleware es EXTERNO al de auth: los 401 también se registran.
@@ -82,6 +82,10 @@ final class MetricsRecorderMiddleware
         try {
             $principal = $request->attributes->get(ApiKeyAuthMiddleware::ATTRIBUTE);
             $mechanism = $principal instanceof AuthenticatedPrincipal ? $principal->mechanism : 'none';
+
+            if (! ($principal instanceof AuthenticatedPrincipal) && $response->getStatusCode() === 401) {
+                $mechanism = (string) $request->attributes->get(FlexibleAuthMiddleware::ATTEMPTED_MECHANISM, 'none');
+            }
 
             $credential = $request->header('X-API-Key', $request->header('Authorization', ''));
 

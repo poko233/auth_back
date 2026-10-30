@@ -28,6 +28,8 @@ use Symfony\Component\HttpFoundation\Response;
  */
 final class FlexibleAuthMiddleware
 {
+    public const ATTEMPTED_MECHANISM = 'auth.attempted_mechanism';
+
     public function __construct(
         private AuthenticateWithApiKey $apiKey,
         private AuthenticateWithBasic $basic,
@@ -42,11 +44,14 @@ final class FlexibleAuthMiddleware
     public function handle(Request $request, Closure $next): Response
     {
         $principal = null;
+        $request->attributes->set(self::ATTEMPTED_MECHANISM, 'none');
         $authStart = microtime(true);
 
         if ($request->header('X-API-Key') !== null) {
+            $request->attributes->set(self::ATTEMPTED_MECHANISM, 'api_key');
             $principal = $this->apiKey->execute($request->header('X-API-Key', ''));
         } elseif (str_starts_with($request->header('Authorization', ''), 'Basic ')) {
+            $request->attributes->set(self::ATTEMPTED_MECHANISM, 'basic');
             $decoded = base64_decode(substr($request->header('Authorization', ''), 6), true);
 
             if ($decoded !== false && str_contains($decoded, ':')) {
@@ -60,8 +65,10 @@ final class FlexibleAuthMiddleware
             $token = substr($request->header('Authorization', ''), 7);
 
             if ($mechanism === '' || $mechanism === 'jwt') {
+                $request->attributes->set(self::ATTEMPTED_MECHANISM, 'jwt');
                 $principal = $this->jwt->execute($token);
             } elseif ($mechanism === 'oauth') {
+                $request->attributes->set(self::ATTEMPTED_MECHANISM, 'oauth');
                 $principal = $this->oauth->execute($token);
             } else {
                 return response()->json(['error' => 'invalid_mechanism'], 400);
@@ -72,7 +79,6 @@ final class FlexibleAuthMiddleware
         $request->attributes->set('auth.ms', (int) round((microtime(true) - $authStart) * 1000));
 
         if ($principal === null) {
-            // TODO Fase 10: registrar intento fallido para métricas.
             return response()->json(['error' => 'unauthenticated'], 401);
         }
 

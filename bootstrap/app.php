@@ -21,6 +21,9 @@ return Application::configure(basePath: dirname(__DIR__))
         );
 
         // Mapeo de excepciones de dominio a códigos HTTP.
+        $exceptions->render(fn (Lab\Domain\Experiment\Exception\ExperimentStateConflict $e) =>
+            response()->json(['error' => $e->reason, 'detail' => $e->getMessage()], 409));
+
         $notFound = [
             Lab\Domain\Identity\Exception\UserNotFound::class,
             Lab\Domain\Access\Exception\RoleNotFound::class,

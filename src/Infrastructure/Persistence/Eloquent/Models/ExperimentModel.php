@@ -16,6 +16,8 @@ final class ExperimentModel extends Model
     protected $fillable = [
         'name',
         'mechanism',
+        'test_user_id',
+        'resources',
         'status',
         'started_at',
         'finished_at',
@@ -27,6 +29,7 @@ final class ExperimentModel extends Model
     protected function casts(): array
     {
         return [
+            'resources' => 'array',
             'started_at' => 'datetime',
             'finished_at' => 'datetime',
         ];

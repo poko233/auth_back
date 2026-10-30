@@ -6,6 +6,7 @@ namespace Tests\Feature\Experiments;
 
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\Support\IssuesApiKeys;
+use Tests\Support\ManagesExperiments;
 use Tests\TestCase;
 
 /**
@@ -14,6 +15,7 @@ use Tests\TestCase;
 final class ExperimentTest extends TestCase
 {
     use IssuesApiKeys;
+    use ManagesExperiments;
     use RefreshDatabase;
 
     protected function setUp(): void
@@ -28,31 +30,30 @@ final class ExperimentTest extends TestCase
             'name' => 'Sujeto', 'email' => 'sujeto@lab.test', 'password' => 'secreta123',
         ])->assertCreated()->json('id');
 
-        $experimentId = (int) $this->postJson('/api/experiments', [
-            'name' => 'Escalado VIEWER→EDITOR',
-            'mechanism' => 'api_key',
-        ])->assertCreated()->assertJsonPath('status', 'RUNNING')->json('id');
+        $experimentId = $this->createRunningExperiment('Escalado VIEWER→EDITOR', 'api_key', $userId);
 
         $this->postJson("/api/experiments/{$experimentId}/privileges", [
             'user_id' => $userId,
             'add_roles' => ['VIEWER'],
-        ])->assertNoContent();
+        ], $this->managementHeaders())->assertNoContent();
 
         $this->postJson("/api/experiments/{$experimentId}/privileges", [
             'user_id' => $userId,
             'add_roles' => ['EDITOR'],
             'remove_roles' => ['VIEWER'],
-        ])->assertNoContent();
+        ], $this->managementHeaders())->assertNoContent();
 
-        $this->getJson("/api/experiments/{$experimentId}/events")
+        $this->getJson("/api/experiments/{$experimentId}/events", $this->managementHeaders())
             ->assertOk()->assertJsonCount(2)->assertJsonFragment(['event_type' => 'role_change']);
 
-        $this->postJson("/api/experiments/{$experimentId}/finish")
+        $this->postJson("/api/experiments/{$experimentId}/finish", [], $this->managementHeaders())
             ->assertOk()->assertJsonPath('status', 'COMPLETED');
     }
 
     public function test_mecanismo_invalido_rechazado(): void
     {
-        $this->postJson('/api/experiments', ['name' => 'X', 'mechanism' => 'saml'])->assertStatus(422);
+        $payload = $this->experimentPayload();
+        $payload['mechanism'] = 'saml';
+        $this->postJson('/api/experiments', $payload, $this->managementHeaders())->assertStatus(422);
     }
 }

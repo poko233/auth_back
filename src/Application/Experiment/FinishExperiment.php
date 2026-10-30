@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Lab\Application\Experiment;
 
 use Lab\Domain\Experiment\Exception\ExperimentNotFound;
+use Lab\Domain\Experiment\Exception\ExperimentStateConflict;
 use Lab\Domain\Experiment\Experiment;
 use Lab\Domain\Experiment\ExperimentRepository;
 use Lab\Domain\Experiment\ExperimentStatus;
@@ -31,6 +32,12 @@ final class FinishExperiment
 
         $experiment->finish($status, $this->clock->now());
 
-        return $this->experiments->save($experiment);
+        $saved = $this->experiments->transition($experiment, ExperimentStatus::RUNNING);
+
+        if ($saved === null) {
+            throw new ExperimentStateConflict('experiment_state_changed', 'El experimento ya no está en ejecución');
+        }
+
+        return $saved;
     }
 }

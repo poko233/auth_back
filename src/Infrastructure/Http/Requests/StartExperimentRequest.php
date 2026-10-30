@@ -6,6 +6,7 @@ namespace Lab\Infrastructure\Http\Requests;
 
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
+use Lab\Domain\Experiment\Experiment;
 
 /**
  * Validación para iniciar un experimento.
@@ -19,7 +20,7 @@ final class StartExperimentRequest extends FormRequest
     {
         return [
             'name' => ['required', 'string', 'max:255'],
-            'mechanism' => ['required', Rule::in(['api_key', 'basic', 'jwt', 'oauth'])],
+            'mechanism' => ['required', Rule::in(Experiment::MECHANISMS)],
         ];
     }
 }

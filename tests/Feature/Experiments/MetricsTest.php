@@ -6,6 +6,7 @@ namespace Tests\Feature\Experiments;
 
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\Support\IssuesApiKeys;
+use Tests\Support\ManagesExperiments;
 use Tests\TestCase;
 
 /**
@@ -14,6 +15,7 @@ use Tests\TestCase;
 final class MetricsTest extends TestCase
 {
     use IssuesApiKeys;
+    use ManagesExperiments;
     use RefreshDatabase;
 
     protected function setUp(): void
@@ -27,10 +29,7 @@ final class MetricsTest extends TestCase
         $viewer = $this->makeUserWithKey('viewer@lab.test', 'VIEWER');
         $admin = $this->makeUserWithKey('admin@lab.test', 'ADMIN');
 
-        $experimentId = (int) $this->postJson('/api/experiments', [
-            'name' => 'Comparación',
-            'mechanism' => 'api_key',
-        ])->assertCreated()->json('id');
+        $experimentId = $this->createRunningExperiment('Comparación');
 
         $headers = fn (string $key): array => array_merge(
             $this->keyHeaders($key),
@@ -72,10 +71,7 @@ final class MetricsTest extends TestCase
 
     public function test_401_por_key_invalida_queda_registrado(): void
     {
-        $experimentId = (int) $this->postJson('/api/experiments', [
-            'name' => 'Fallos',
-            'mechanism' => 'api_key',
-        ])->assertCreated()->json('id');
+        $experimentId = $this->createRunningExperiment('Fallos');
 
         $this->getJson('/api/tickets', [
             'X-API-Key' => str_repeat('0', 64),
@@ -85,7 +81,7 @@ final class MetricsTest extends TestCase
         $this->assertDatabaseHas('metrics', [
             'experiment_id' => $experimentId,
             'http_status' => 401,
-            'mechanism' => 'none',
+            'mechanism' => 'api_key',
         ]);
     }
 
@@ -94,12 +90,9 @@ final class MetricsTest extends TestCase
         $this->getJson('/api/tickets', ['X-Experiment-Id' => '999999'])
             ->assertStatus(400)->assertJsonPath('error', 'invalid_experiment');
 
-        $experimentId = (int) $this->postJson('/api/experiments', [
-            'name' => 'Cerrado',
-            'mechanism' => 'api_key',
-        ])->assertCreated()->json('id');
+        $experimentId = $this->createRunningExperiment('Cerrado');
 
-        $this->postJson("/api/experiments/{$experimentId}/finish")->assertOk();
+        $this->postJson("/api/experiments/{$experimentId}/finish", [], $this->managementHeaders())->assertOk();
 
         $this->getJson('/api/tickets', ['X-Experiment-Id' => (string) $experimentId])
             ->assertStatus(400)->assertJsonPath('error', 'invalid_experiment');
@@ -109,13 +102,8 @@ final class MetricsTest extends TestCase
     {
         $admin = $this->makeUserWithKey('admin@lab.test', 'ADMIN');
 
-        $first = (int) $this->postJson('/api/experiments', [
-            'name' => 'Uno', 'mechanism' => 'api_key',
-        ])->assertCreated()->json('id');
-
-        $second = (int) $this->postJson('/api/experiments', [
-            'name' => 'Dos', 'mechanism' => 'api_key',
-        ])->assertCreated()->json('id');
+        $first = $this->createRunningExperiment('Uno');
+        $second = $this->createRunningExperiment('Dos');
 
         $headers = fn (int $exp): array => array_merge(
             $this->keyHeaders($admin['key']),

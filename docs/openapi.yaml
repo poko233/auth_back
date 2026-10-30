@@ -523,34 +523,127 @@ paths:
           description: Token revocado
   /experiments:
     get:
-      summary: Listar experimentos
+      summary: Listar experimentos (permiso ADMIN)
+      security: [{ApiKey: []}, {Basic: []}, {JwtBearer: []}, {OAuthBearer: []}]
       responses:
         '200':
           description: Experimentos
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Experiment' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
     post:
-      summary: Iniciar experimento
+      summary: Crear experimento PENDING (permiso ADMIN)
+      description: No inicia solicitudes ni establece started_at. No acepta credenciales del sujeto como configuración persistida.
+      security: [{ApiKey: []}, {Basic: []}, {JwtBearer: []}, {OAuthBearer: []}]
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [name, mechanism]
+              required: [name, mechanism, test_user_id, resources]
               properties:
-                name: { type: string }
+                name: { type: string, maxLength: 255 }
                 mechanism: { type: string, enum: [api_key, basic, jwt, oauth] }
+                test_user_id:
+                  description: ID numérico de un usuario existente; se admite su representación decimal string y se devuelve como string.
+                  oneOf: [{type: integer, minimum: 1}, {type: string, pattern: '^[0-9]+$'}]
+                resources:
+                  type: array
+                  minItems: 1
+                  uniqueItems: true
+                  items: { type: string, enum: [tickets.list] }
       responses:
         '201':
-          description: Experimento RUNNING
-  /experiments/{id}/finish:
+          description: Experimento PENDING creado
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Experiment' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          description: Validación; errors por campo. Mensajes obligatorios para name, mechanism y test_user_id.
+  /experiments/{id}/start:
     post:
-      summary: Cerrar experimento
+      summary: Iniciar un experimento existente (permiso ADMIN)
+      description: |
+        Transición atómica PENDING a RUNNING con started_at; no crea otro registro ni ejecuta solicitudes.
+        La UI verifica al sujeto en /users/me y coordina dos GET /tickets secuenciales, con credencial
+        válida e inválida, ambos con X-Experiment-Id. Depende de mantener el navegador abierto.
+        COMPLETED, RUNNING y FAILED no pueden reiniciarse. Un histórico sin configuración no puede iniciarse.
+      security: [{ApiKey: []}, {Basic: []}, {JwtBearer: []}, {OAuthBearer: []}]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: integer, minimum: 1}}
       responses:
         '200':
-          description: Experimento COMPLETED
+          description: Experimento RUNNING, mismo ID
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Experiment' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Conflicto identificable de transición
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error: {type: string, enum: [experiment_already_executed, experiment_running, experiment_failed, experiment_state_changed]}
+                  detail: {type: string, example: Este experimento ya fue ejecutado}
+        '422':
+          description: Histórico sin usuario y recursos configurados
+  /experiments/{id}/finish:
+    post:
+      summary: Cerrar un experimento RUNNING (permiso ADMIN)
+      description: |
+        Actualización condicional; conserva métricas y no sobrescribe fechas de experimentos cerrados.
+        Sin status completa. FAILED permite informar un fallo operativo; el 401 negativo esperado no es un fallo del ejecutor.
+        No verifica por sí mismo que el cliente haya enviado la secuencia; esa coordinación corresponde al frontend o al smoke.
+      security: [{ApiKey: []}, {Basic: []}, {JwtBearer: []}, {OAuthBearer: []}]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: integer, minimum: 1}}
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status: {type: string, enum: [COMPLETED, FAILED], default: COMPLETED}
+      responses:
+        '200':
+          description: Experimento COMPLETED o FAILED con finished_at
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Experiment' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: experiment_not_running o experiment_state_changed; no se modifica finished_at
+        '422':
+          description: Estado final inválido
   /experiments/{id}/privileges:
     post:
       summary: Cambiar privilegios del escenario
+      description: Exige autenticación y permiso ADMIN, igual que la gestión del experimento.
+      security: [{ApiKey: []}, {Basic: []}, {JwtBearer: []}, {OAuthBearer: []}]
       requestBody:
         required: true
         content:
@@ -568,12 +661,17 @@ paths:
   /experiments/{id}/events:
     get:
       summary: Eventos del experimento
+      security: [{ApiKey: []}, {Basic: []}, {JwtBearer: []}, {OAuthBearer: []}]
       responses:
         '200':
           description: Eventos
   /experiments/{experimentId}/metrics:
     get:
       summary: Métricas del experimento
+      description: |
+        Una fila por solicitud efectivamente persistida. En un 401, mechanism identifica la rama
+        de autenticación intentada por el servidor; sin evidencia estructural permanece none.
+        No expone credenciales, identificadores de métrica ni fechas. La lectura conserva su política de acceso previa.
       responses:
         '200':
           description: Métricas
@@ -585,7 +683,23 @@ paths:
           description: Comparación con losses y valid
 components:
   schemas:
-  UserMeResponse:
+    Experiment:
+      type: object
+      required: [id, name, mechanism, status, test_user_id, resources, created_at, started_at, finished_at]
+      properties:
+        id: {type: integer}
+        name: {type: string}
+        mechanism: {type: string, enum: [api_key, basic, jwt, oauth]}
+        status: {type: string, enum: [PENDING, RUNNING, COMPLETED, FAILED]}
+        test_user_id: {type: string, nullable: true}
+        resources:
+          type: array
+          nullable: true
+          items: {type: string, enum: [tickets.list]}
+        created_at: {type: string, format: date-time, nullable: true}
+        started_at: {type: string, format: date-time, nullable: true}
+        finished_at: {type: string, format: date-time, nullable: true}
+    UserMeResponse:
       type: object
       required: [user, roles, permissions]
       properties:

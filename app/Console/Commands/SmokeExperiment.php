@@ -6,6 +6,8 @@ namespace App\Console\Commands;
 
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Http;
+use Lab\Domain\Experiment\Experiment;
+use Throwable;
 
 /**
  * Smoke del experimento: misma secuencia con los 4 mecanismos.
@@ -20,7 +22,7 @@ final class SmokeExperiment extends Command
         {mechanism : api_key|basic|jwt|oauth}
         {--base-url=http://localhost:8000}
         {--admin-email=admin@lab.test}
-        {--admin-password= : Contraseña del administrador para gestionar API Keys}';
+        {--admin-password= : Contraseña del administrador para gestionar el experimento}';
 
     protected $description = 'Corre la secuencia experimental con un mecanismo y la compara.';
 
@@ -41,21 +43,47 @@ final class SmokeExperiment extends Command
         $mechanism = (string) $this->argument('mechanism');
         $this->base = rtrim((string) $this->option('base-url'), '/').'/api';
 
-        if (! in_array($mechanism, ['api_key', 'basic', 'jwt', 'oauth'], true)) {
+        if (! in_array($mechanism, Experiment::MECHANISMS, true)) {
             $this->error('Mecanismo inválido. Usa api_key|basic|jwt|oauth.');
 
             return self::FAILURE;
         }
 
-        if ($mechanism === 'api_key') {
-            $password = $this->option('admin-password') ?: $this->secret('Contraseña del administrador');
-            $this->managementAuth = ['Authorization' => 'Basic '.base64_encode($this->option('admin-email').':'.$password)];
+        $password = $this->option('admin-password') ?: $this->secret('Contraseña del administrador');
+        $this->managementAuth = ['Authorization' => 'Basic '.base64_encode($this->option('admin-email').':'.$password)];
+
+        $this->experimentId = null;
+
+        try {
+            $userId = $this->setupUser($mechanism);
+            $this->authenticate($mechanism, $userId);
+            $this->startExperiment($mechanism, $userId);
+            $this->runScenario($mechanism, $userId);
+            $this->finish();
+            $this->compare();
+
+            return self::SUCCESS;
+        } catch (Throwable) {
+            $this->error('Falló la ejecución del smoke; se conservan las métricas registradas.');
+
+            if ($this->experimentId !== null) {
+                try {
+                    Http::withHeaders($this->managementAuth)
+                        ->post("{$this->base}/experiments/{$this->experimentId}/finish", ['status' => 'FAILED'])->throw();
+                } catch (Throwable) {
+                    $this->warn('No se pudo confirmar el cierre. Consulte el estado del experimento.');
+                }
+            }
+
+            return self::FAILURE;
+        } finally {
+            $this->auth = [];
+            $this->managementAuth = [];
         }
+    }
 
-        $userId = $this->setupUser($mechanism);
-        $this->startExperiment($mechanism);
-        $this->authenticate($mechanism, $userId);
-
+    private function runScenario(string $mechanism, int $userId): void
+    {
         $stages = [
             ['VIEWER', ['VIEWER'], []],
             ['EDITOR', ['EDITOR'], ['VIEWER']],
@@ -70,10 +98,6 @@ final class SmokeExperiment extends Command
 
         $this->revokeCredential($mechanism, $userId);
         $this->operate('REVOCADO (debe fallar)');
-        $this->finish();
-        $this->compare();
-
-        return self::SUCCESS;
     }
 
     private function setupUser(string $mechanism): int
@@ -98,14 +122,18 @@ final class SmokeExperiment extends Command
         return (int) $created['id'];
     }
 
-    private function startExperiment(string $mechanism): void
+    private function startExperiment(string $mechanism, int $userId): void
     {
-        $response = Http::post("{$this->base}/experiments", [
+        $response = Http::withHeaders($this->managementAuth)->post("{$this->base}/experiments", [
             'name' => "Smoke {$mechanism} ".date('Y-m-d H:i:s'),
             'mechanism' => $mechanism,
-        ])->json();
+            'test_user_id' => $userId,
+            'resources' => ['tickets.list'],
+        ])->throw()->json();
 
         $this->experimentId = (string) $response['id'];
+        // /start solo cambia el estado: el smoke conserva SU secuencia de operaciones.
+        Http::withHeaders($this->managementAuth)->post("{$this->base}/experiments/{$this->experimentId}/start")->throw();
         $this->info("Experimento #{$this->experimentId} ({$mechanism}).");
     }
 
@@ -169,11 +197,11 @@ final class SmokeExperiment extends Command
      */
     private function privileges(int $userId, array $add, array $remove): void
     {
-        Http::post("{$this->base}/experiments/{$this->experimentId}/privileges", [
+        Http::withHeaders($this->managementAuth)->post("{$this->base}/experiments/{$this->experimentId}/privileges", [
             'user_id' => $userId,
             'add_roles' => $add,
             'remove_roles' => $remove,
-        ]);
+        ])->throw();
     }
 
     private function operate(string $stage): void
@@ -215,7 +243,7 @@ final class SmokeExperiment extends Command
 
     private function finish(): void
     {
-        Http::post("{$this->base}/experiments/{$this->experimentId}/finish");
+        Http::withHeaders($this->managementAuth)->post("{$this->base}/experiments/{$this->experimentId}/finish")->throw();
     }
 
     private function compare(): void

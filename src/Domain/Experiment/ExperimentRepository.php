@@ -11,6 +11,9 @@ interface ExperimentRepository
 {
     public function save(Experiment $experiment): Experiment;
 
+    /** Guarda las fechas y el estado solo si el estado persistido todavía coincide. */
+    public function transition(Experiment $experiment, ExperimentStatus $expectedStatus): ?Experiment;
+
     public function findById(int $id): ?Experiment;
 
     /**

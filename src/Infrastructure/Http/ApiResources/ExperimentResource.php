@@ -21,6 +21,11 @@ final class ExperimentResource
             'name' => $experiment->name(),
             'mechanism' => $experiment->mechanism(),
             'status' => $experiment->status()->value,
+            'test_user_id' => $experiment->testUserId()?->value(),
+            'resources' => $experiment->resources(),
+            'created_at' => $experiment->createdAt()?->format(DATE_ATOM),
+            'started_at' => $experiment->startedAt()?->format(DATE_ATOM),
+            'finished_at' => $experiment->finishedAt()?->format(DATE_ATOM),
         ];
     }
 }

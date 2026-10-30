@@ -6,13 +6,16 @@ namespace Lab\Infrastructure\Http\Controllers;
 
 use Illuminate\Http\JsonResponse;
 use Lab\Application\Experiment\ChangeUserPrivileges;
+use Lab\Application\Experiment\BeginExperiment;
+use Lab\Application\Experiment\CreateExperiment;
 use Lab\Application\Experiment\FinishExperiment;
 use Lab\Application\Experiment\RecordEvent;
-use Lab\Application\Experiment\StartExperiment;
 use Lab\Domain\Experiment\ExperimentStatus;
+use Lab\Domain\Identity\UserId;
 use Lab\Infrastructure\Http\ApiResources\ExperimentResource;
 use Lab\Infrastructure\Http\Requests\ChangePrivilegesRequest;
-use Lab\Infrastructure\Http\Requests\StartExperimentRequest;
+use Lab\Infrastructure\Http\Requests\CreateExperimentRequest;
+use Lab\Infrastructure\Http\Requests\FinishExperimentRequest;
 
 /**
  * Ciclo de vida de experimentos + cambios de privilegios del escenario.
@@ -20,7 +23,8 @@ use Lab\Infrastructure\Http\Requests\StartExperimentRequest;
 final class ExperimentController
 {
     public function __construct(
-        private StartExperiment $start,
+        private CreateExperiment $create,
+        private BeginExperiment $begin,
         private FinishExperiment $finish,
         private RecordEvent $events,
         private ChangeUserPrivileges $privileges,
@@ -35,17 +39,28 @@ final class ExperimentController
         return response()->json(array_map(ExperimentResource::make(...), $experiments));
     }
 
-    public function start(StartExperimentRequest $request): JsonResponse
+    public function store(CreateExperimentRequest $request): JsonResponse
     {
         $validated = $request->validated();
-        $experiment = $this->start->execute($validated['name'], $validated['mechanism']);
+        $experiment = $this->create->execute(
+            $validated['name'],
+            $validated['mechanism'],
+            UserId::fromString((string) $validated['test_user_id']),
+            $validated['resources'],
+        );
 
         return response()->json(ExperimentResource::make($experiment), 201);
     }
 
-    public function finish(string $id): JsonResponse
+    public function start(string $id): JsonResponse
     {
-        $experiment = $this->finish->execute((int) $id);
+        return response()->json(ExperimentResource::make($this->begin->execute((int) $id)));
+    }
+
+    public function finish(FinishExperimentRequest $request, string $id): JsonResponse
+    {
+        $status = ExperimentStatus::from($request->validated()['status'] ?? ExperimentStatus::COMPLETED->value);
+        $experiment = $this->finish->execute((int) $id, $status);
 
         return response()->json(ExperimentResource::make($experiment));
     }
