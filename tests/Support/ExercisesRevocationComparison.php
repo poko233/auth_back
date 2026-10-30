@@ -22,7 +22,9 @@ trait ExercisesRevocationComparison
         $client = "hu54-{$suffix}";
         DB::table('oauth_clients')->insert(['name' => 'Prueba HU54', 'client_id' => $client, 'client_secret' => Hash::make($password)]);
         $admin = app(IssueApiKey::class)->execute((int) $user, 'Administrador de prueba');
+        $management = ['X-API-Key' => $admin['plain']];
         $target = app(IssueApiKey::class)->execute((int) $user, 'Credencial de prueba');
+        $this->postJson('/api/auth/api-key/login', ['key' => $target['plain']])->assertOk()->assertJsonPath('key_id', $target['apiKey']->id()->value());
         $jwt = $this->postJson('/api/auth/jwt/login', ['email' => $email, 'password' => $password])->assertCreated()->json('token');
         $oauth = $this->postJson('/api/auth/oauth/token', ['grant_type' => 'password', 'client_id' => $client, 'client_secret' => $password, 'username' => $email, 'password' => $password])->assertOk()->json('access_token');
         $cases = [
@@ -31,14 +33,16 @@ trait ExercisesRevocationComparison
             ['oauth', ['Authorization' => 'Bearer '.$oauth, 'X-Auth-Mechanism' => 'oauth'], '/api/auth/oauth/revoke', ['token' => $oauth], []],
         ];
         foreach ($cases as [$mechanism, $headers, $url, $body, $revokeHeaders]) {
-            $id = $this->postJson('/api/experiments', ['name' => "HU54 {$suffix} {$mechanism}", 'mechanism' => $mechanism])->assertCreated()->json('id');
+            $id = $this->postJson('/api/experiments', ['name' => "HU54 {$suffix} {$mechanism}", 'mechanism' => $mechanism, 'test_user_id' => (string) $user, 'resources' => ['tickets.list']], $management)->assertCreated()->assertJsonPath('status', 'PENDING')->json('id');
+            $this->postJson("/api/experiments/{$id}/start", [], $management)->assertOk()->assertJsonPath('status', 'RUNNING');
             $context = ['X-Experiment-Id' => (string) $id];
             $this->getJson('/api/tickets', array_merge($headers, $context))->assertOk();
             // Mismatched context must not revoke the credential.
             $this->postJson($url, $body, array_merge($revokeHeaders, ['X-Experiment-Id' => '999999999']))->assertStatus(400);
             $this->getJson('/api/tickets', array_merge($headers, $context))->assertOk();
             $this->postJson($url, $body, array_merge($revokeHeaders, $context))->assertNoContent();
-            $events = $this->getJson("/api/experiments/{$id}/events")->assertOk()->json();
+            $this->getJson("/api/experiments/{$id}/events")->assertUnauthorized();
+            $events = $this->getJson("/api/experiments/{$id}/events", $management)->assertOk()->json();
             $this->assertCount(1, $events);
             $this->assertSame('credential_revoked', $events[0]['event_type']);
             $this->assertSame($mechanism, $events[0]['payload']['mechanism']);
@@ -46,10 +50,11 @@ trait ExercisesRevocationComparison
             $this->getJson('/api/tickets', array_merge($headers, $context))->assertUnauthorized();
             $metrics = $this->getJson("/api/experiments/{$id}/metrics")->assertOk()->assertJsonCount(3)->json();
             $this->assertSame(401, $metrics[2]['http_status']);
-            $this->assertSame('none', $metrics[2]['mechanism']);
+            $this->assertSame($mechanism, $metrics[2]['mechanism']);
             $this->assertGreaterThan($events[0]['payload']['after_metric_id'], $metrics[2]['id']);
             $this->assertNotFalse(strtotime($metrics[2]['occurred_at']));
-            $this->postJson("/api/experiments/{$id}/finish")->assertOk();
+            $this->postJson("/api/experiments/{$id}/finish", [], $management)->assertOk()->assertJsonPath('status', 'COMPLETED');
+            $this->postJson("/api/experiments/{$id}/start", [], $management)->assertStatus(409);
             $this->postJson($url, $body, array_merge($revokeHeaders, $context))->assertStatus(400);
         }
         $this->getJson('/api/tickets', ['Authorization' => 'Basic '.base64_encode($email.':'.$password)])->assertOk();

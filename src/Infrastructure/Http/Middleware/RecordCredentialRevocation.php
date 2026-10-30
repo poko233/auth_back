@@ -7,6 +7,11 @@ namespace Lab\Infrastructure\Http\Middleware;
 use Closure;
 use Illuminate\Http\Request;
 use Lab\Application\Experiment\RecordEvent;
+use Lab\Domain\Credential\ApiKey\ApiKeyId;
+use Lab\Domain\Credential\ApiKey\ApiKeyRepository;
+use Lab\Domain\Credential\Jwt\Exception\JwtInvalid;
+use Lab\Domain\Credential\Jwt\JwtSigner;
+use Lab\Domain\Credential\OAuth\AccessTokenRepository;
 use Lab\Domain\Experiment\ExperimentRepository;
 use Lab\Domain\Experiment\ExperimentStatus;
 use Lab\Domain\Experiment\MetricRepository;
@@ -20,6 +25,9 @@ final class RecordCredentialRevocation
         private MetricRepository $metrics,
         private RecordEvent $events,
         private TransactionManager $transactions,
+        private ApiKeyRepository $apiKeys,
+        private JwtSigner $jwt,
+        private AccessTokenRepository $oauth,
     ) {}
 
     /**
@@ -38,8 +46,31 @@ final class RecordCredentialRevocation
             || $experiment->mechanism() !== $mechanism) {
             return response()->json(['error' => 'invalid_experiment'], 400);
         }
+        if ($experiment->testUserId() !== null
+            && (string) $this->credentialUser($request, $mechanism) !== $experiment->testUserId()->value()) {
+            return response()->json(['error' => 'experiment_credential_mismatch'], 422);
+        }
 
         return $this->transactions->transaction(fn (): Response => $this->revokeAndRecord($request, $next, $mechanism, (int) $id));
+    }
+
+    private function credentialUser(Request $request, string $mechanism): ?int
+    {
+        if ($mechanism === 'api_key') {
+            return $this->apiKeys->findById(ApiKeyId::fromInt((int) $request->route('id')))?->userId();
+        }
+        $token = $request->input('token');
+        if (! is_string($token)) {
+            return null;
+        }
+        if ($mechanism === 'oauth') {
+            return $this->oauth->findByHash(hash('sha256', $token))?->userId();
+        }
+        try {
+            return $this->jwt->parse($token)->sub;
+        } catch (JwtInvalid) {
+            return null;
+        }
     }
 
     /** @param Closure(Request): Response $next */

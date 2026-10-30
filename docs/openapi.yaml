@@ -302,6 +302,7 @@ paths:
   /auth/api-key/login:
     post:
       summary: Verificar API Key
+      description: Devuelve user, mechanism y key_id de la API Key autenticada. key_id permite revocar exactamente esa credencial durante un experimento sin recuperar su hash o su plano del listado.
       requestBody:
         required: true
         content:
@@ -669,6 +670,9 @@ paths:
         excluida del tramo posterior), nunca la credencial. La revocación y el
         evento se confirman en una transacción. Sin header se conserva el flujo
         existente sin evento. Contexto inválido devuelve 400 antes de revocar.
+        Si el experimento tiene test_user_id, la credencial debe pertenecer a
+        ese usuario; en otro caso devuelve 422 experiment_credential_mismatch
+        antes de revocar y sin registrar un evento.
         Basic no tiene revocación de token; role_change no equivale a revocación.
       responses:
         '200':

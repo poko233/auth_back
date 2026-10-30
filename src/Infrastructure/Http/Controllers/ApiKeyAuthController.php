@@ -51,6 +51,7 @@ final class ApiKeyAuthController
         return response()->json([
             'user' => UserResource::make($user),
             'mechanism' => $principal->mechanism,
+            'key_id' => $principal->metadata['key_id'] ?? null,
         ]);
     }
 
