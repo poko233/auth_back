@@ -662,6 +662,14 @@ paths:
     get:
       summary: Eventos del experimento
       security: [{ApiKey: []}, {Basic: []}, {JwtBearer: []}, {OAuthBearer: []}]
+      description: |
+        Incluye credential_revoked cuando una revocación exitosa de API Key,
+        JWT u OAuth envía X-Experiment-Id de un experimento RUNNING del mismo
+        mecanismo. Payload contiene mechanism y after_metric_id (última muestra
+        excluida del tramo posterior), nunca la credencial. La revocación y el
+        evento se confirman en una transacción. Sin header se conserva el flujo
+        existente sin evento. Contexto inválido devuelve 400 antes de revocar.
+        Basic no tiene revocación de token; role_change no equivale a revocación.
       responses:
         '200':
           description: Eventos
@@ -669,9 +677,18 @@ paths:
     get:
       summary: Métricas del experimento
       description: |
-        Una fila por solicitud efectivamente persistida. En un 401, mechanism identifica la rama
-        de autenticación intentada por el servidor; sin evidencia estructural permanece none.
-        No expone credenciales, identificadores de métrica ni fechas. La lectura conserva su política de acceso previa.
+        Una fila por solicitud efectivamente persistida. En un 401, mechanism
+        identifica la rama de autenticación intentada por el servidor; sin
+        evidencia estructural permanece none. No se atribuye una identidad
+        autenticada a un intento fallido.
+        Cada muestra incluye id y occurred_at (ISO 8601 con zona horaria), además
+        de los campos existentes. Para analizar revocación, usar únicamente
+        muestras posteriores al evento credential_revoked y con id mayor que
+        after_metric_id. Las muestras históricas o sin mecanismo identificable
+        con mechanism=none solo pueden atribuirse al mecanismo configurado
+        cuando corresponden a una ejecución aislada.
+        HTTP 401 por sí solo no distingue expiración, revocación o token inválido.
+        No se exponen credenciales. La lectura conserva su política de acceso previa.
       responses:
         '200':
           description: Métricas

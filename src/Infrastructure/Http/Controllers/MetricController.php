@@ -6,6 +6,7 @@ namespace Lab\Infrastructure\Http\Controllers;
 
 use Illuminate\Http\JsonResponse;
 use Lab\Application\Experiment\CompareMetrics;
+use Lab\Domain\Experiment\ExperimentRepository;
 use Lab\Domain\Experiment\MetricRepository;
 
 /**
@@ -16,9 +17,8 @@ final class MetricController
     public function __construct(
         private MetricRepository $metrics,
         private CompareMetrics $compare,
-        private \Lab\Domain\Experiment\ExperimentRepository $experiments,
-    ) {
-    }
+        private ExperimentRepository $experiments,
+    ) {}
 
     public function index(string $experimentId): JsonResponse
     {
@@ -26,6 +26,8 @@ final class MetricController
 
         return response()->json(array_map(
             static fn ($metric): array => [
+                'id' => $metric->id,
+                'occurred_at' => $metric->occurredAt->format(DATE_ATOM),
                 'mechanism' => $metric->mechanism,
                 'operation' => $metric->operation,
                 'http_status' => $metric->httpStatus,
