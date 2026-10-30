@@ -56,4 +56,28 @@ final class ExperimentTest extends TestCase
         $payload['mechanism'] = 'saml';
         $this->postJson('/api/experiments', $payload, $this->managementHeaders())->assertStatus(422);
     }
+
+    public function test_cambio_de_rol_registra_administrador_y_valida_rol_y_estado(): void
+{
+    $userId = (int) $this->postJson('/api/users', [
+        'name' => 'Sujeto', 'email' => 'sujeto@lab.test', 'password' => 'secreta123',
+    ])->assertCreated()->json('id');
+    $experimentId = $this->createRunningExperiment('Cambio de rol', 'api_key', $userId);
+    $url = "/api/experiments/{$experimentId}/privileges";
+
+    $this->postJson($url, ['user_id' => $userId, 'add_roles' => ['VIEWER']], $this->managementHeaders())->assertNoContent();
+
+    $event = $this->getJson("/api/experiments/{$experimentId}/events", $this->managementHeaders())->assertOk()->json('0');
+    $this->assertSame('role_change', $event['event_type']);
+    $this->assertNotEmpty($event['payload']['admin_name']);
+    $this->assertIsInt($event['payload']['after_metric_id']);
+
+    $this->postJson($url, ['user_id' => $userId, 'add_roles' => ['NO_EXISTE']], $this->managementHeaders())
+        ->assertStatus(422)->assertJsonValidationErrors(['add_roles.0']);
+
+    $this->postJson("/api/experiments/{$experimentId}/finish", [], $this->managementHeaders())->assertOk();
+    $this->postJson($url, ['user_id' => $userId, 'add_roles' => ['EDITOR']], $this->managementHeaders())
+        ->assertStatus(409)->assertJsonPath('error', 'experiment_not_running');
+}
+    
 }

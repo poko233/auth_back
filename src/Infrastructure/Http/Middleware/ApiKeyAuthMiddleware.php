@@ -10,6 +10,7 @@ use Lab\Application\Authentication\ApiKey\AuthenticateWithApiKey;
 use Lab\Application\Authentication\AuthenticatedPrincipal;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Exception\UnauthorizedHttpException;
+use Lab\Infrastructure\Http\Middleware\ApiKeyAuthMiddleware;
 
 /**
  * Autenticación por API Key (header X-API-Key).
@@ -60,4 +61,5 @@ final class ApiKeyAuthMiddleware
 
         return $principal;
     }
+    
 }

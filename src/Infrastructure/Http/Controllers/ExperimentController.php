@@ -16,6 +16,7 @@ use Lab\Infrastructure\Http\ApiResources\ExperimentResource;
 use Lab\Infrastructure\Http\Requests\ChangePrivilegesRequest;
 use Lab\Infrastructure\Http\Requests\CreateExperimentRequest;
 use Lab\Infrastructure\Http\Requests\FinishExperimentRequest;
+use Lab\Infrastructure\Http\Middleware\ApiKeyAuthMiddleware;
 
 /**
  * Ciclo de vida de experimentos + cambios de privilegios del escenario.
@@ -66,17 +67,18 @@ final class ExperimentController
     }
 
     public function privileges(ChangePrivilegesRequest $request, string $id): JsonResponse
-    {
-        $validated = $request->validated();
-        $this->privileges->execute(
-            (int) $id,
-            (int) $validated['user_id'],
-            $validated['add_roles'] ?? [],
-            $validated['remove_roles'] ?? [],
-        );
+{
+    $validated = $request->validated();
+    $this->privileges->execute(
+        (int) $id,
+        (int) $validated['user_id'],
+        $validated['add_roles'] ?? [],
+        $validated['remove_roles'] ?? [],
+        (int) ApiKeyAuthMiddleware::principal($request)->userId->value(),
+    );
 
-        return response()->json(null, 204);
-    }
+    return response()->json(null, 204);
+}
 
     public function events(string $id): JsonResponse
     {
